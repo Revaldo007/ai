@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, CheckCircle2, AlertTriangle, Download,
@@ -25,6 +25,7 @@ export default function ResultsView({
   const [fixedCards, setFixedCards] = useState({});
   const [checkedSteps, setCheckedSteps] = useState({ 0: true, 1: true });
   const [isExportingPDF, setIsExportingPDF] = useState(false);
+  const [pdfError, setPdfError] = useState('');
 
   const displayJobTitle = jobTitle && jobTitle.trim() !== ''
     ? jobTitle
@@ -197,41 +198,54 @@ export default function ResultsView({
     { id: 'all',          label: 'Full Report',       icon: FileSpreadsheet },
   ];
 
-  const handleExportPDF = async () => {
+  const handleExportPDF = useCallback(async () => {
     if (isExportingPDF) return;
+    setPdfError('');
+    setIsExportingPDF(true);
+
+    // Switch to full-report tab so every section is rendered in the DOM
+    setActiveTab('all');
+    // Wait 600ms for React to re-render all sections
+    await new Promise(resolve => setTimeout(resolve, 600));
+
     try {
-      setIsExportingPDF(true);
-      setActiveTab('all'); // Show full report so all sections are rendered
-
-      // Wait 350ms for Full Report tab layout to render fully
-      await new Promise(resolve => setTimeout(resolve, 350));
-
       const reportElem = document.getElementById('resume-report-content');
-      if (!reportElem) {
-        setIsExportingPDF(false);
-        return;
-      }
+      if (!reportElem) throw new Error('Report element not found');
 
-      // Dynamically import html2pdf to prevent bundler reference errors
-      const html2pdfModule = await import('html2pdf.js');
-      const html2pdf = html2pdfModule.default || html2pdfModule;
+      // Use html2canvas + jsPDF directly — most reliable in Vite ESM builds
+      const [html2canvasMod, jsPDFMod] = await Promise.all([
+        import('html2canvas'),
+        import('jspdf'),
+      ]);
+      const html2canvas = html2canvasMod.default || html2canvasMod;
+      const { jsPDF } = jsPDFMod;
+
+      const canvas = await html2canvas(reportElem, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#0f0f1a',
+        windowWidth: reportElem.scrollWidth,
+        windowHeight: reportElem.scrollHeight,
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.97);
+      const pdfW = 210; // A4 mm
+      const pdfH = Math.ceil((canvas.height / canvas.width) * pdfW);
+
+      const pdf = new jsPDF({ unit: 'mm', format: [pdfW, pdfH], orientation: 'portrait' });
+      pdf.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH);
 
       const sanitizeName = (displayJobTitle || 'Resume').replace(/[^a-zA-Z0-9]/g, '_');
-      const opt = {
-        margin:       [0.3, 0.3, 0.3, 0.3],
-        filename:     `${sanitizeName}_AI_Resume_Analysis.pdf`,
-        image:        { type: 'jpeg', quality: 0.98 },
-        html2canvas:  { scale: 2, useCORS: true, logging: false },
-        jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' }
-      };
-
-      await html2pdf().set(opt).from(reportElem).save();
+      pdf.save(`${sanitizeName}_AI_Resume_Analysis.pdf`);
     } catch (err) {
-      console.error("PDF Export Error:", err);
+      console.error('PDF Export Error:', err);
+      setPdfError('PDF export failed. Please try again.');
+      setTimeout(() => setPdfError(''), 4000);
     } finally {
       setIsExportingPDF(false);
     }
-  };
+  }, [isExportingPDF, displayJobTitle]);
 
   const scrollViewport = { once: false, amount: 0.12 };
 
@@ -351,6 +365,11 @@ export default function ResultsView({
               <Download size={13} className={isExportingPDF ? 'animate-spin text-violet-400' : ''} />
               <span>{isExportingPDF ? 'Generating PDF...' : 'Export PDF'}</span>
             </motion.button>
+            {pdfError && (
+              <span className="text-[11px] text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-lg">
+                {pdfError}
+              </span>
+            )}
 
             {/* LIGHT / DARK MODE TOGGLE BUTTON */}
             <motion.button
