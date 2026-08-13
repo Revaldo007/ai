@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     # Third-party apps
     'corsheaders',      # Fixed: Single entry
     'rest_framework',
+    'rest_framework.authtoken',
     
     # Local app
     'analyzer',
@@ -88,15 +89,21 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # CORS Configuration for React
-CORS_ALLOWED_ORIGINS = [  # Fixed: Changed from CORS_ALLOW_ALL_ORIGINS to CORS_ALLOWED_ORIGINS
+CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",
+    "http://localhost:5174",
     "http://localhost:3000",
     "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
     "http://127.0.0.1:3000",
 ]
 
 # Django REST Framework Settings
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ]

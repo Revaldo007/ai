@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Sparkles, CheckCircle2, AlertTriangle, Download,
@@ -7,12 +7,137 @@ import {
   LayoutDashboard, Radar, CheckSquare, Wand2, FileSpreadsheet,
   TrendingUp, Target, BookOpen, Lightbulb, ArrowRight, Star,
   Brain, Zap, Award, BarChart3, ChevronRight, Sun, Moon,
-  Check, Filter, Clock, Flame, Info, CheckSquare2, Calendar, Milestone
+  Check, Filter, Clock, Flame, Info, CheckSquare2, Calendar, Milestone, Briefcase, Plus, X
 } from 'lucide-react';
 
 import CompetencyRadar from '../components/CompetencyRadar';
 import Sidebar from '../components/Sidebar';
 
+/* ─────────────────────────────────────────────────────────────
+   RECOMMENDED SKILLS FETCHING COMPONENT
+   ───────────────────────────────────────────────────────────── */
+function SkillRecommendations({ userSkills, addedSkills, role, onAddSkill, isDarkMode }) {
+  const [recommendations, setRecommendations] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedSkills, setSelectedSkills] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function fetchSkills() {
+      try {
+        setLoading(true);
+        const res = await fetch('/api/recommend-skills', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userSkills, role }),
+        });
+
+        if (!res.ok) throw new Error('Network response was not ok');
+
+        const data = await res.json();
+        if (isMounted) {
+          const recs = data.recommendedCategories || [];
+          setRecommendations(recs.filter(s => !userSkills.includes(s) && !addedSkills.includes(s)));
+        }
+      } catch (err) {
+        if (isMounted) {
+          const fallbackPool = ['Docker', 'CI/CD Pipelines', 'System Design', 'Redis', 'Kafka', 'AWS', 'GraphQL'];
+          setRecommendations(fallbackPool.filter(s => !userSkills.includes(s) && !addedSkills.includes(s)));
+        }
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    if (role) {
+      fetchSkills();
+    }
+
+    return () => {
+      isMounted = false;
+    };
+  }, [role, userSkills, addedSkills]);
+
+  const toggleSelectSkill = (skill) => {
+    setSelectedSkills(prev =>
+      prev.includes(skill) ? prev.filter(s => s !== skill) : [...prev, skill]
+    );
+  };
+
+  const handleConfirmAdd = () => {
+    selectedSkills.forEach(skill => {
+      onAddSkill(skill);
+      setRecommendations(prev => prev.filter(s => s !== skill));
+    });
+    setSelectedSkills([]);
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-xs text-amber-400/80 animate-pulse py-2">
+        <Sparkles size={13} className="animate-spin" /> Fetching real-time role suggestions...
+      </div>
+    );
+  }
+
+  if (!recommendations.length) {
+    return (
+      <div className={`text-xs italic py-2 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+        All top role recommendations have been added or selected!
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+          ⚡ Recommended Role Skills to Acquire
+        </p>
+        {selectedSkills.length > 0 && (
+          <motion.button
+            whileHover={{ scale: 1.03 }}
+            whileTap={{ scale: 0.97 }}
+            onClick={handleConfirmAdd}
+            className="px-3 py-1 text-xs font-bold rounded-lg bg-amber-500 text-slate-950 flex items-center gap-1 cursor-pointer shadow-sm"
+          >
+            <Plus size={13} /> Add Selected ({selectedSkills.length}) to Target Skills
+          </motion.button>
+        )}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {recommendations.map((skill) => {
+          const isSelected = selectedSkills.includes(skill);
+          return (
+            <motion.button
+              key={skill}
+              type="button"
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => toggleSelectSkill(skill)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-full transition cursor-pointer flex items-center gap-1.5 border ${
+                isSelected
+                  ? 'bg-amber-500 text-slate-950 border-amber-400 font-bold'
+                  : isDarkMode
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-300 hover:bg-amber-500/20'
+                    : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
+              }`}
+            >
+              {isSelected ? <Check size={12} /> : <Plus size={12} />}
+              {skill}
+            </motion.button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────────
+   MAIN RESULTS VIEW COMPONENT
+   ───────────────────────────────────────────────────────────── */
 export default function ResultsView({
   fileName = "AI_Resume_Analysis_Sample_Report.pdf",
   jobTitle = "",
@@ -22,6 +147,7 @@ export default function ResultsView({
   const [activeTab, setActiveTab] = useState('overview');
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [improvementFilter, setImprovementFilter] = useState('all');
+  const [selectedCategory, setSelectedCategory] = useState('all');
   const [fixedCards, setFixedCards] = useState({});
   const [checkedSteps, setCheckedSteps] = useState({ 0: true, 1: true });
   const [isExportingPDF, setIsExportingPDF] = useState(false);
@@ -31,19 +157,34 @@ export default function ResultsView({
     ? jobTitle
     : "Software Developer";
 
+  // Skill matrix state
+  const [extractedSkills] = useState(
+    analysisData?.extracted_skills || [
+      'React.js', 'Spring Boot', 'PostgreSQL', 'Python', 'Tailwind CSS', 'REST API', 'Git', 'Java'
+    ]
+  );
+
+  const [addedSkills, setAddedSkills] = useState([]);
+
+  const handleAddSkill = (newSkill) => {
+    if (!addedSkills.includes(newSkill) && !extractedSkills.includes(newSkill)) {
+      setAddedSkills((prev) => [...prev, newSkill]);
+    }
+  };
+
+  const handleRemoveAddedSkill = (skillToRemove) => {
+    setAddedSkills((prev) => prev.filter(s => s !== skillToRemove));
+  };
+
   const radarScores = analysisData?.radar_scores || {
     skills: 90, projects: 92, experience: 75,
     education: 88, formatting: 95, atsPass: 92
   };
 
-  const overallMatch     = analysisData?.overall_match        ?? 88;
-  const atsShortlist     = analysisData?.ats_shortlist        ?? 92;
-  const techStackScore   = analysisData?.tech_stack_score     ?? 85;
+  const overallMatch = analysisData?.overall_match ?? 88;
+  const atsShortlist = analysisData?.ats_shortlist ?? 92;
+  const techStackScore = analysisData?.tech_stack_score ?? 85;
   const csFundamentalsScore = analysisData?.cs_fundamentals_score ?? 80;
-
-  const extractedSkills = analysisData?.extracted_skills || [
-    'React.js', 'Spring Boot', 'PostgreSQL', 'Python', 'Tailwind CSS', 'REST API', 'Git', 'Java'
-  ];
 
   const recommendedSkills = analysisData?.recommended_skills || [
     'Docker', 'CI/CD Pipelines', 'System Design', 'Redis'
@@ -128,7 +269,19 @@ export default function ResultsView({
     }
   ];
 
-  // Alternating Timeline Milestones for Target Role (Matching Reference Screenshot Design)
+  const categoriesList = useMemo(() => {
+    const cats = new Set(feedbackItems.map(item => item.category).filter(Boolean));
+    return ['all', ...Array.from(cats)];
+  }, [feedbackItems]);
+
+  const filteredFeedback = useMemo(() => {
+    return feedbackItems.filter(item => {
+      const matchesSeverity = improvementFilter === 'all' || item.severity === improvementFilter;
+      const matchesCategory = selectedCategory === 'all' || item.category === selectedCategory;
+      return matchesSeverity && matchesCategory;
+    });
+  }, [feedbackItems, improvementFilter, selectedCategory]);
+
   const timelineMilestones = [
     {
       phase: '2026 DEPLOYMENT',
@@ -172,11 +325,6 @@ export default function ResultsView({
     }
   ];
 
-  const filteredFeedback = feedbackItems.filter(item => {
-    if (improvementFilter === 'all') return true;
-    return item.severity === improvementFilter;
-  });
-
   const toggleFixedCard = (idx) => {
     setFixedCards(prev => ({ ...prev, [idx]: !prev[idx] }));
   };
@@ -189,30 +337,129 @@ export default function ResultsView({
   const roadmapProgressPercent = Math.round((completedRoadmapCount / timelineMilestones.length) * 100);
 
   const navItems = [
-    { id: 'overview',     label: 'Score Summary',  icon: LayoutDashboard },
-    { id: 'diagnostics',  label: 'Resume Sections', icon: Layers },
-    { id: 'rewriter',     label: 'AI Rewriter',     icon: Wand2 },
-    { id: 'skills',       label: 'My Skills',        icon: CheckSquare },
-    { id: 'radar',        label: 'Skills Chart',     icon: Radar },
-    { id: 'improvement',  label: 'How to Improve',   icon: TrendingUp },
-    { id: 'all',          label: 'Full Report',       icon: FileSpreadsheet },
+    { id: 'overview', label: 'Score Summary', icon: LayoutDashboard },
+    { id: 'diagnostics', label: 'Resume Sections', icon: Layers },
+    { id: 'rewriter', label: 'AI Rewriter', icon: Wand2 },
+    { id: 'skills', label: 'My Skills', icon: CheckSquare },
+    { id: 'radar', label: 'Skills Chart', icon: Radar },
+    { id: 'improvement', label: 'How to Improve', icon: TrendingUp },
+    { id: 'all', label: 'Full Report', icon: FileSpreadsheet },
   ];
 
+  // ── FULL REPORT MARKDOWN EXPORT FUNCTION ──
+  const handleExportMarkdown = () => {
+    const mdContent = `
+# 📄 Full AI Resume Analysis Report
+
+**File Name:** ${fileName}  
+**Target Role:** ${displayJobTitle}  
+**Status:** Analysis Complete  
+
+---
+
+## 📊 1. Executive Summary & Scores
+
+| Metric | Score | Status |
+| :--- | :--- | :--- |
+| **Overall Match** | ${overallMatch}% | ${overallMatch >= 75 ? 'Shortlist Eligible' : overallMatch >= 45 ? 'Needs Alignment' : 'Domain Mismatch'} |
+| **ATS Shortlist** | ${atsShortlist}% | High Rate |
+| **Tech Stack Alignment** | ${techStackScore}% | Role Aligned |
+| **CS Fundamentals** | ${csFundamentalsScore}% | DSA & DBMS |
+
+### Match Verdict:
+> **${overallMatch >= 75 ? `🎓 ${displayJobTitle} Ready` : overallMatch >= 45 ? `⚠️ ${displayJobTitle} Needs Alignment` : `❌ ${displayJobTitle} Domain Mismatch`}**  
+> ${
+      overallMatch >= 75
+        ? 'High probability of clearing automated ATS screening for this position.'
+        : overallMatch >= 45
+        ? 'Moderate alignment. Add missing core keywords to improve ATS shortlist ranking.'
+        : 'Severe skill/domain mismatch. Resume qualifications do not align with target position requirements.'
+    }
+
+---
+
+## 📑 2. Resume Section Analysis
+
+${(analysisData?.diagnostics || [
+  { title: "Technical Stack", percentage: techStackScore, status: "Strong", note: "High alignment with target role stack" },
+  { title: "Projects & Portfolio", percentage: radarScores.projects || 92, status: "Verified", note: "Verified projects with stack tags" },
+  { title: "Core CS Knowledge", percentage: csFundamentalsScore, status: "Verified", note: "Database design & logic patterns detected" },
+  { title: "Education & Format", percentage: radarScores.education || 88, status: "Passed", note: "Clean ATS-parseable layout detected" }
+]).map(item => `### 🔹 ${item.title} (${item.percentage}%) - *${item.status}*
+- **Assessment:** ${item.note}
+- **Keywords/Tags:** ${item.tags ? item.tags.join(', ') : 'N/A'}`).join('\n\n')}
+
+---
+
+## 🎯 3. Skill Keyword Matrix
+
+* **Parsed Resume Skills:** ${extractedSkills.join(', ')}
+* **Target Skill Additions:** ${addedSkills.length ? addedSkills.join(', ') : 'None added'}
+* **Recommended Role Skills:** ${recommendedSkills.join(', ')}
+
+---
+
+## 🕸️ 4. Competency Radar Breakdown
+
+* **Skills Matrix:** ${radarScores.skills}%
+* **Projects & Impact:** ${radarScores.projects}%
+* **Experience Level:** ${radarScores.experience}%
+* **Education & Certs:** ${radarScores.education}%
+* **Formatting & ATS Compliance:** ${radarScores.formatting}%
+* **ATS Shortlist Probability:** ${radarScores.atsPass}%
+
+---
+
+## ✨ 5. AI Bullet Point Rewrites
+
+${bulletRewrites.map((item, i) => `### Bullet ${i + 1}
+- **❌ Before (Weak):** ${item.before}
+- **✅ After (ATS-Optimized):** ${item.after}
+- **Impact Badge:** \`${item.badge}\``).join('\n\n')}
+
+---
+
+## 🚀 6. Actionable Improvement Plan
+
+${feedbackItems.map((item, idx) => `### ${idx + 1}. [${item.severity.toUpperCase()} PRIORITY] ${item.title}
+* **Category:** ${item.category || 'General'}
+* **Issue:** ${item.description}
+* **Actionable Suggestion:** ${item.suggestion}
+* **Expected Impact:** ${item.impact || 'N/A'} | **Est. Time:** ${item.timeframe || 'N/A'}`).join('\n\n')}
+
+---
+
+## 🗺️ 7. Deployment Roadmap Milestones
+
+${timelineMilestones.map((m) => `* **[${m.phase}] ${m.title}** (${m.year})
+  - *Description:* ${m.description}
+  - *Expected Impact:* ${m.impact}`).join('\n')}
+  `.trim();
+
+    const blob = new Blob([mdContent], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const sanitizeName = (displayJobTitle || 'Resume').replace(/[^a-zA-Z0-9]/g, '_');
+    link.setAttribute('download', `${sanitizeName}_Full_Analysis_Report.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // ── PDF EXPORT FUNCTION ──
   const handleExportPDF = useCallback(async () => {
     if (isExportingPDF) return;
     setPdfError('');
     setIsExportingPDF(true);
 
-    // Switch to full-report tab so every section is rendered in the DOM
     setActiveTab('all');
-    // Wait 600ms for React to re-render all sections
     await new Promise(resolve => setTimeout(resolve, 600));
 
     try {
       const reportElem = document.getElementById('resume-report-content');
       if (!reportElem) throw new Error('Report element not found');
 
-      // Use html2canvas + jsPDF directly — most reliable in Vite ESM builds
       const [html2canvasMod, jsPDFMod] = await Promise.all([
         import('html2canvas'),
         import('jspdf'),
@@ -230,7 +477,7 @@ export default function ResultsView({
       });
 
       const imgData = canvas.toDataURL('image/jpeg', 0.97);
-      const pdfW = 210; // A4 mm
+      const pdfW = 210;
       const pdfH = Math.ceil((canvas.height / canvas.width) * pdfW);
 
       const pdf = new jsPDF({ unit: 'mm', format: [pdfW, pdfH], orientation: 'portrait' });
@@ -273,11 +520,10 @@ export default function ResultsView({
           : { background: '#F8FAFC' }
       }
     >
-      {/* Global glow orbs (Dark Mode Only) */}
       {isDarkMode && (
         <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-          <div style={{ position:'absolute', top:'-10%', left:'10%', width:500, height:500, borderRadius:'50%', background:'radial-gradient(circle,rgba(139,92,246,0.12) 0%,transparent 70%)', filter:'blur(40px)' }} />
-          <div style={{ position:'absolute', bottom:'10%', right:'5%', width:400, height:400, borderRadius:'50%', background:'radial-gradient(circle,rgba(59,130,246,0.10) 0%,transparent 70%)', filter:'blur(40px)' }} />
+          <div style={{ position: 'absolute', top: '-10%', left: '10%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle,rgba(139,92,246,0.12) 0%,transparent 70%)', filter: 'blur(40px)' }} />
+          <div style={{ position: 'absolute', bottom: '10%', right: '5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle,rgba(59,130,246,0.10) 0%,transparent 70%)', filter: 'blur(40px)' }} />
         </div>
       )}
 
@@ -291,8 +537,6 @@ export default function ResultsView({
         style={isDarkMode ? { background: 'rgba(11,15,30,0.85)', backdropFilter: 'blur(20px)' } : {}}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-
-          {/* LEFT: File Info */}
           <div className="flex items-center gap-3 min-w-0">
             <motion.div
               whileHover={{ scale: 1.08, rotate: 5 }}
@@ -339,7 +583,6 @@ export default function ResultsView({
             </div>
           </div>
 
-          {/* RIGHT: Action Buttons + Theme Toggle */}
           <div className="flex items-center gap-2 shrink-0">
             <motion.button
               whileHover={{ scale: 1.04 }}
@@ -351,27 +594,22 @@ export default function ResultsView({
               <RefreshCw size={13} /> New Resume
             </motion.button>
 
+            {/* EXPORT MARKDOWN BUTTON */}
             <motion.button
-              whileHover={{ scale: isExportingPDF ? 1 : 1.04 }}
-              whileTap={{ scale: isExportingPDF ? 1 : 0.96 }}
-              onClick={handleExportPDF}
-              disabled={isExportingPDF}
+              whileHover={{ scale: 1.04 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={handleExportMarkdown}
               className={`flex items-center gap-1.5 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold cursor-pointer transition ${
                 isDarkMode
-                  ? 'bg-white/5 border border-white/10 text-slate-300 hover:bg-white/10'
-                  : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 shadow-xs'
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20'
+                  : 'bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 shadow-xs'
               }`}
+              title="Export report as Markdown file (.md)"
             >
-              <Download size={13} className={isExportingPDF ? 'animate-spin text-violet-400' : ''} />
-              <span>{isExportingPDF ? 'Generating PDF...' : 'Export PDF'}</span>
+              <FileText size={13} />
+              <span>Export MD</span>
             </motion.button>
-            {pdfError && (
-              <span className="text-[11px] text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded-lg">
-                {pdfError}
-              </span>
-            )}
 
-            {/* LIGHT / DARK MODE TOGGLE BUTTON */}
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
@@ -396,30 +634,26 @@ export default function ResultsView({
               )}
             </motion.button>
           </div>
-
         </div>
       </header>
 
       {/* DASHBOARD BODY */}
       <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
 
-        {/* NAV */}
         <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} navItems={navItems} fileName={fileName} isDarkMode={isDarkMode} />
 
-        {/* MAIN CONTENT */}
         <main id="resume-report-content" className="space-y-6">
 
           {/* ── SECTION 1: SCORE SUMMARY ── */}
           {(activeTab === 'overview' || activeTab === 'all') && (
             <motion.section key="tab-overview" variants={containerVariants} initial="hidden" whileInView="visible" viewport={scrollViewport} className="space-y-5">
 
-              {/* 4 Score Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
                   { label: 'Overall Match', value: overallMatch, icon: Award, sub: 'ATS Ready', grad: 'from-violet-600 to-purple-600' },
-                  { label: 'ATS Shortlist', value: atsShortlist, icon: ShieldCheck, sub: 'High Rate',  grad: 'from-blue-600 to-cyan-600' },
-                  { label: 'Tech Stack',    value: techStackScore,   icon: Code2, sub: 'Role Aligned',  grad: 'from-emerald-600 to-teal-600' },
-                  { label: 'CS Score',      value: csFundamentalsScore, icon: Cpu, sub: 'DSA & DBMS',  grad: 'from-orange-500 to-rose-500' },
+                  { label: 'ATS Shortlist', value: atsShortlist, icon: ShieldCheck, sub: 'High Rate', grad: 'from-blue-600 to-cyan-600' },
+                  { label: 'Tech Stack', value: techStackScore, icon: Code2, sub: 'Role Aligned', grad: 'from-emerald-600 to-teal-600' },
+                  { label: 'CS Score', value: csFundamentalsScore, icon: Cpu, sub: 'DSA & DBMS', grad: 'from-orange-500 to-rose-500' },
                 ].map((card, idx) => {
                   const Icon = card.icon;
                   return (
@@ -470,7 +704,6 @@ export default function ResultsView({
                 }`}
                 style={isDarkMode ? { background: 'linear-gradient(135deg,rgba(124,58,237,0.15) 0%,rgba(79,70,229,0.08) 100%)' } : {}}
               >
-                {/* Circle gauge */}
                 <div className="relative w-28 h-28 shrink-0">
                   <svg className="w-full h-full -rotate-90" viewBox="0 0 100 100">
                     <circle cx="50" cy="50" r="42" stroke={isDarkMode ? "rgba(255,255,255,0.06)" : "#F1F5F9"} strokeWidth="8" fill="transparent" />
@@ -503,8 +736,8 @@ export default function ResultsView({
                       overallMatch >= 75
                         ? { background: 'rgba(16,185,129,0.15)', border: '1px solid rgba(16,185,129,0.3)', color: '#34d399' }
                         : overallMatch >= 45
-                        ? { background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }
-                        : { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }
+                          ? { background: 'rgba(245,158,11,0.15)', border: '1px solid rgba(245,158,11,0.3)', color: '#fbbf24' }
+                          : { background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171' }
                     }
                   >
                     <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${overallMatch >= 75 ? 'bg-emerald-400' : overallMatch >= 45 ? 'bg-amber-400' : 'bg-red-400'}`} />
@@ -518,8 +751,8 @@ export default function ResultsView({
                     {overallMatch >= 75
                       ? 'High probability of clearing automated ATS screening for this position.'
                       : overallMatch >= 45
-                      ? 'Moderate alignment. Add missing core keywords to improve ATS shortlist ranking.'
-                      : 'Severe skill/domain mismatch. Resume qualifications do not align with target position requirements.'}
+                        ? 'Moderate alignment. Add missing core keywords to improve ATS shortlist ranking.'
+                        : 'Severe skill/domain mismatch. Resume qualifications do not align with target position requirements.'}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-3">
                     {[
@@ -568,22 +801,22 @@ export default function ResultsView({
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {(analysisData?.diagnostics || [
-                  { title: "Technical Stack", percentage: techStackScore, status: "Strong", tags: extractedSkills.slice(0,4), note: "High alignment with target role stack" },
-                  { title: "Projects & Portfolio", percentage: radarScores.projects || 92, status: "Verified", tags: extractedSkills.slice(2,5), note: "Verified projects with stack tags" },
+                  { title: "Technical Stack", percentage: techStackScore, status: "Strong", tags: extractedSkills.slice(0, 4), note: "High alignment with target role stack" },
+                  { title: "Projects & Portfolio", percentage: radarScores.projects || 92, status: "Verified", tags: extractedSkills.slice(2, 5), note: "Verified projects with stack tags" },
                   { title: "Core CS Knowledge", percentage: csFundamentalsScore, status: "Verified", tags: ["DBMS", "Algorithms", "SQL"], note: "Database design & logic patterns detected" },
                   { title: "Education & Format", percentage: radarScores.education || 88, status: "Passed", tags: ["ATS Friendly", "PDF Parsed"], note: "Clean ATS-parseable layout detected" }
                 ]).map((item, idx) => {
-                  const icons = [<Code2 size={15}/>, <FolderGit2 size={15}/>, <Cpu size={15}/>, <GraduationCap size={15}/>];
-                  const grads = ['from-violet-500 to-purple-500','from-blue-500 to-cyan-500','from-emerald-500 to-teal-500','from-orange-400 to-rose-400'];
+                  const icons = [<Code2 size={15} />, <FolderGit2 size={15} />, <Cpu size={15} />, <GraduationCap size={15} />];
+                  const grads = ['from-violet-500 to-purple-500', 'from-blue-500 to-cyan-500', 'from-emerald-500 to-teal-500', 'from-orange-400 to-rose-400'];
                   const statusColors = {
-                    Strong: { bg:'rgba(16,185,129,0.15)', border:'rgba(16,185,129,0.3)', text:'#34d399' },
-                    Excellent: { bg:'rgba(16,185,129,0.15)', border:'rgba(16,185,129,0.3)', text:'#34d399' },
-                    Verified: { bg:'rgba(59,130,246,0.15)', border:'rgba(59,130,246,0.3)', text:'#60a5fa' },
-                    Qualified: { bg:'rgba(251,191,36,0.15)', border:'rgba(251,191,36,0.3)', text:'#fbbf24' },
-                    Passed: { bg:'rgba(16,185,129,0.15)', border:'rgba(16,185,129,0.3)', text:'#34d399' },
-                    'Needs Alignment': { bg:'rgba(239,68,68,0.15)', border:'rgba(239,68,68,0.3)', text:'#f87171' },
-                    'Needs Review': { bg:'rgba(251,191,36,0.15)', border:'rgba(251,191,36,0.3)', text:'#fbbf24' },
-                    Moderate: { bg:'rgba(251,191,36,0.15)', border:'rgba(251,191,36,0.3)', text:'#fbbf24' },
+                    Strong: { bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.3)', text: '#34d399' },
+                    Excellent: { bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.3)', text: '#34d399' },
+                    Verified: { bg: 'rgba(59,130,246,0.15)', border: 'rgba(59,130,246,0.3)', text: '#60a5fa' },
+                    Qualified: { bg: 'rgba(251,191,36,0.15)', border: 'rgba(251,191,36,0.3)', text: '#fbbf24' },
+                    Passed: { bg: 'rgba(16,185,129,0.15)', border: 'rgba(16,185,129,0.3)', text: '#34d399' },
+                    'Needs Alignment': { bg: 'rgba(239,68,68,0.15)', border: 'rgba(239,68,68,0.3)', text: '#f87171' },
+                    'Needs Review': { bg: 'rgba(251,191,36,0.15)', border: 'rgba(251,191,36,0.3)', text: '#fbbf24' },
+                    Moderate: { bg: 'rgba(251,191,36,0.15)', border: 'rgba(251,191,36,0.3)', text: '#fbbf24' },
                   };
                   const sc = statusColors[item.status] || statusColors['Verified'];
                   return (
@@ -599,10 +832,10 @@ export default function ResultsView({
                     >
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
-                          <div className={`p-1.5 rounded-lg bg-gradient-to-br ${grads[idx]}`}>{icons[idx]}</div>
+                          <div className={`p-1.5 rounded-lg bg-gradient-to-br ${grads[idx % grads.length]}`}>{icons[idx % icons.length]}</div>
                           <span className={`text-sm font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{item.title}</span>
                         </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: sc.bg, border:`1px solid ${sc.border}`, color: sc.text }}>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: sc.bg, border: `1px solid ${sc.border}`, color: sc.text }}>
                           {item.status}
                         </span>
                       </div>
@@ -616,7 +849,7 @@ export default function ResultsView({
                             whileInView={{ width: `${item.percentage}%` }}
                             viewport={scrollViewport}
                             transition={{ duration: 0.9, ease: 'easeOut' }}
-                            className={`h-full rounded-full bg-gradient-to-r ${grads[idx]}`}
+                            className={`h-full rounded-full bg-gradient-to-r ${grads[idx % grads.length]}`}
                           />
                         </div>
                       </div>
@@ -633,20 +866,19 @@ export default function ResultsView({
                 })}
               </div>
 
-              {/* Coding profiles strip */}
               <div className={`rounded-xl p-4 flex items-center gap-3 ${isDarkMode ? 'bg-violet-500/8 border border-violet-500/20' : 'bg-violet-50/70 border border-violet-200'}`}>
                 <div className={`p-2 rounded-lg ${isDarkMode ? 'bg-violet-500/20' : 'bg-violet-100 text-violet-700'}`}>
                   <GitBranch size={16} className={isDarkMode ? "text-violet-400" : "text-violet-700"} />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2">
-                    <span className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Coding Profiles & Links</span>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ background:'rgba(251,191,36,0.15)', border:'1px solid rgba(251,191,36,0.3)', color:'#fbbf24' }}>
+                    <span className={`text-xs font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Coding Profiles & Portfolio Links</span>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded" style={{ background: 'rgba(251,191,36,0.15)', border: '1px solid rgba(251,191,36,0.3)', color: '#fbbf24' }}>
                       Priority Fix
                     </span>
                   </div>
                   <p className={`text-[11px] mt-0.5 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                    Add an explicit LeetCode problem count (e.g., "200+ Solved") to boost ATS score to 95%+.
+                    Add target metric highlights (e.g. "200+ Solved", "Live Vercel Demos") tailored to {displayJobTitle} to boost recruiter pass rate.
                   </p>
                 </div>
               </div>
@@ -673,7 +905,7 @@ export default function ResultsView({
                 </div>
                 <div>
                   <h3 className={`text-base font-extrabold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>AI Bullet Point Rewriter</h3>
-                  <p className={`text-xs ${isDarkMode ? 'text-cyan-400' : 'text-cyan-600'}`}>ATS-optimized impact-driven language upgrades</p>
+                  <p className={`text-xs ${isDarkMode ? 'text-cyan-400' : 'text-cyan-600'}`}>ATS-optimized impact-driven language upgrades for {displayJobTitle}</p>
                 </div>
               </div>
 
@@ -687,24 +919,21 @@ export default function ResultsView({
                     }`}
                   >
                     <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Bullet {idx + 1}</div>
-                    {/* Before */}
-                    <div className="rounded-lg p-3" style={{ background:'rgba(239,68,68,0.08)', border:'1px solid rgba(239,68,68,0.2)' }}>
+                    <div className="rounded-lg p-3" style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.2)' }}>
                       <div className="text-[9px] font-bold uppercase text-red-500 dark:text-red-400 mb-1.5 flex items-center gap-1">
                         <span>❌</span> Before (Weak)
                       </div>
                       <p className={`text-xs leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-700'}`}>{item.before}</p>
                     </div>
-                    {/* Arrow */}
                     <div className="flex justify-center"><ChevronRight size={16} className="text-slate-400 rotate-90" /></div>
-                    {/* After */}
-                    <div className="rounded-lg p-3" style={{ background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.25)' }}>
+                    <div className="rounded-lg p-3" style={{ background: 'rgba(16,185,129,0.08)', border: '1px solid rgba(16,185,129,0.25)' }}>
                       <div className="text-[9px] font-bold uppercase text-emerald-600 dark:text-emerald-400 mb-1.5 flex items-center gap-1">
                         <span>✅</span> After (ATS-Optimized)
                       </div>
                       <p className={`text-xs leading-relaxed font-medium ${isDarkMode ? 'text-slate-200' : 'text-slate-900'}`}>{item.after}</p>
                     </div>
                     <div className="flex justify-end">
-                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ background:'rgba(139,92,246,0.15)', border:'1px solid rgba(139,92,246,0.3)', color: isDarkMode ? '#c4b5fd' : '#6d28d9' }}>
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full" style={{ background: 'rgba(139,92,246,0.15)', border: '1px solid rgba(139,92,246,0.3)', color: isDarkMode ? '#c4b5fd' : '#6d28d9' }}>
                         {item.badge}
                       </span>
                     </div>
@@ -722,7 +951,7 @@ export default function ResultsView({
               initial="hidden"
               whileInView="visible"
               viewport={scrollViewport}
-              className={`rounded-2xl p-6 space-y-5 transition ${
+              className={`rounded-2xl p-6 space-y-6 transition ${
                 isDarkMode
                   ? 'bg-white/3 border border-white/8 backdrop-blur-md'
                   : 'bg-white border border-slate-200 shadow-sm'
@@ -734,19 +963,20 @@ export default function ResultsView({
                 </div>
                 <div>
                   <h3 className={`text-base font-extrabold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Skill Keyword Matrix</h3>
-                  <p className={`text-xs ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>Extracted from your resume + ATS gap analysis</p>
+                  <p className={`text-xs ${isDarkMode ? 'text-emerald-400' : 'text-emerald-600'}`}>Extracted skills & category recommendations for {displayJobTitle}</p>
                 </div>
               </div>
 
+              {/* 1. Verified Skills Extracted from Resume */}
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">✅ Found in Resume</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+                  <CheckCircle2 size={13} className="text-emerald-400" /> Parsed Extracted Resume Skills ({extractedSkills.length})
+                </p>
                 <div className="flex flex-wrap gap-2">
-                  {extractedSkills.map((skill, idx) => (
-                    <motion.span
-                      key={idx}
-                      variants={itemVariants}
-                      whileHover={{ scale: 1.06, y: -2 }}
-                      className="text-xs font-semibold px-3 py-1.5 rounded-full cursor-default"
+                  {extractedSkills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-full cursor-default border shadow-2xs"
                       style={
                         isDarkMode
                           ? { background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#6ee7b7' }
@@ -754,30 +984,56 @@ export default function ResultsView({
                       }
                     >
                       ✓ {skill}
-                    </motion.span>
+                    </span>
                   ))}
                 </div>
               </div>
 
-              <div className={isDarkMode ? 'border-t border-white/6 pt-5' : 'border-t border-slate-100 pt-5'}>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-3">⚡ Recommended Additions</p>
-                <div className="flex flex-wrap gap-2">
-                  {recommendedSkills.map((skill, idx) => (
-                    <motion.span
-                      key={idx}
-                      variants={itemVariants}
-                      whileHover={{ scale: 1.06, y: -2 }}
-                      className="text-xs font-semibold px-3 py-1.5 rounded-full cursor-default"
-                      style={
-                        isDarkMode
-                          ? { background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', color: '#fcd34d' }
-                          : { background: '#fffbeb', border: '1px solid #fde68a', color: '#b45309' }
-                      }
-                    >
-                      + {skill}
-                    </motion.span>
-                  ))}
+              {/* 2. Target / Planned Skill Additions (User Selected) */}
+              {addedSkills.length > 0 && (
+                <div className={isDarkMode ? 'border-t border-white/6 pt-4' : 'border-t border-slate-100 pt-4'}>
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-cyan-400 mb-3 flex items-center gap-1.5">
+                    <Target size={13} /> Targeted Skill Additions for Resume Improvement ({addedSkills.length})
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <AnimatePresence>
+                      {addedSkills.map((skill) => (
+                        <motion.span
+                          key={skill}
+                          initial={{ opacity: 0, scale: 0.8 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          exit={{ opacity: 0, scale: 0.8 }}
+                          className="text-xs font-semibold px-3 py-1.5 rounded-full flex items-center gap-1.5 border"
+                          style={
+                            isDarkMode
+                              ? { background: 'rgba(6,182,212,0.12)', border: '1px solid rgba(6,182,212,0.3)', color: '#67e8f9' }
+                              : { background: '#ecfeff', border: '1px solid #a5f3fc', color: '#0e7490' }
+                          }
+                        >
+                          <span>+ {skill}</span>
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveAddedSkill(skill)}
+                            className="hover:text-rose-400 transition cursor-pointer p-0.5 rounded-full"
+                          >
+                            <X size={12} />
+                          </button>
+                        </motion.span>
+                      ))}
+                    </AnimatePresence>
+                  </div>
                 </div>
+              )}
+
+              {/* 3. Backend-Driven Skill Recommendations */}
+              <div className={isDarkMode ? 'border-t border-white/6 pt-5' : 'border-t border-slate-100 pt-5'}>
+                <SkillRecommendations
+                  userSkills={extractedSkills}
+                  addedSkills={addedSkills}
+                  role={displayJobTitle}
+                  onAddSkill={handleAddSkill}
+                  isDarkMode={isDarkMode}
+                />
               </div>
             </motion.div>
           )}
@@ -787,7 +1043,7 @@ export default function ResultsView({
             <CompetencyRadar data={radarScores} isDarkMode={isDarkMode} />
           )}
 
-          {/* ── SECTION 6: HOW TO IMPROVE (VERTICAL ALTERNATING TIMELINE ROADMAP) ── */}
+          {/* ── SECTION 6: HOW TO IMPROVE ── */}
           {(activeTab === 'improvement' || activeTab === 'all') && (
             <motion.div key="tab-improvement" variants={containerVariants} initial="hidden" whileInView="visible" viewport={scrollViewport} className="space-y-6">
 
@@ -810,7 +1066,7 @@ export default function ResultsView({
                         Comprehensive Improvement Plan
                       </h3>
                       <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-orange-400' : 'text-orange-600'}`}>
-                        7 Actionable areas to guarantee interview shortlisting for {displayJobTitle}
+                        {filteredFeedback.length} Actionable area(s) to guarantee shortlisting for <span className="font-bold underline">{displayJobTitle}</span>
                       </p>
                     </div>
                   </div>
@@ -821,32 +1077,58 @@ export default function ResultsView({
                 </div>
 
                 {/* Priority Filter Bar */}
-                <div className="mt-5 flex flex-wrap items-center gap-2">
-                  <span className={`text-xs font-bold mr-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
-                    <Filter size={12} /> Filter Priority:
-                  </span>
-                  {[
-                    { id: 'all', label: `All Items (${feedbackItems.length})` },
-                    { id: 'high', label: '🔥 High Priority' },
-                    { id: 'medium', label: '⚡ Medium Priority' },
-                    { id: 'low', label: '💡 Quick Wins' },
-                  ].map(tab => (
-                    <button
-                      key={tab.id}
-                      onClick={() => setImprovementFilter(tab.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
-                        improvementFilter === tab.id
-                          ? isDarkMode
-                            ? 'bg-violet-600 text-white border-violet-500 shadow-md shadow-violet-600/30'
-                            : 'bg-violet-600 text-white border-violet-600 shadow-sm'
-                          : isDarkMode
-                            ? 'bg-white/4 text-slate-400 border-white/7 hover:bg-white/8 hover:text-slate-200'
-                            : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
+                <div className="mt-5 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`text-xs font-bold mr-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      <Filter size={12} /> Severity:
+                    </span>
+                    {[
+                      { id: 'all', label: `All Priority (${feedbackItems.length})` },
+                      { id: 'high', label: '🔥 High Priority' },
+                      { id: 'medium', label: '⚡ Medium Priority' },
+                      { id: 'low', label: '💡 Quick Wins' },
+                    ].map(tab => (
+                      <button
+                        key={tab.id}
+                        onClick={() => setImprovementFilter(tab.id)}
+                        className={`px-3 py-1 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                          improvementFilter === tab.id
+                            ? isDarkMode
+                              ? 'bg-violet-600 text-white border-violet-500 shadow-md shadow-violet-600/30'
+                              : 'bg-violet-600 text-white border-violet-600 shadow-sm'
+                            : isDarkMode
+                              ? 'bg-white/4 text-slate-400 border-white/7 hover:bg-white/8 hover:text-slate-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Category Filter Bar */}
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    <span className={`text-xs font-bold mr-1 flex items-center gap-1 ${isDarkMode ? 'text-slate-400' : 'text-slate-500'}`}>
+                      <Briefcase size={12} /> Category:
+                    </span>
+                    {categoriesList.map(cat => (
+                      <button
+                        key={cat}
+                        onClick={() => setSelectedCategory(cat)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition cursor-pointer border ${
+                          selectedCategory === cat
+                            ? isDarkMode
+                              ? 'bg-emerald-600 text-white border-emerald-500'
+                              : 'bg-emerald-600 text-white border-emerald-600'
+                            : isDarkMode
+                              ? 'bg-white/3 text-slate-400 border-white/6 hover:bg-white/8 hover:text-slate-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                        }`}
+                      >
+                        {cat === 'all' ? 'All Categories' : cat}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
                 {/* Feedback List */}
@@ -905,7 +1187,7 @@ export default function ResultsView({
                                   {item.severity} PRIORITY
                                 </span>
                                 {item.category && (
-                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${isDarkMode ? 'bg-white/8 text-slate-300' : 'bg-slate-200 text-slate-700'}`}>
+                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded ${isDarkMode ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30' : 'bg-violet-100 text-violet-700'}`}>
                                     {item.category}
                                   </span>
                                 )}
@@ -969,7 +1251,7 @@ export default function ResultsView({
                       Google's X-Y-Z Resume Bullet Formula
                     </h3>
                     <p className={`text-xs ${isDarkMode ? 'text-violet-300' : 'text-violet-700'}`}>
-                      Proven structure used by top tech companies to pass initial recruiter screens
+                      Proven structure used by top tech companies to pass initial recruiter screens for {displayJobTitle} roles
                     </p>
                   </div>
                 </div>
@@ -998,130 +1280,138 @@ export default function ResultsView({
                 </div>
               </motion.div>
 
-              {/* 3. VERTICAL ALTERNATING TIMELINE ROADMAP (Matching Reference Image Design) */}
+              {/* 3. MODERN SINGLE-COLUMN CLEAN TIMELINE ROADMAP (UPDATED TO MATCH UI IMAGE) */}
               <motion.div
                 variants={itemVariants}
-                className={`rounded-2xl p-6 sm:p-8 relative overflow-hidden transition ${
+                className={`rounded-3xl p-6 sm:p-8 relative overflow-hidden transition ${
                   isDarkMode
-                    ? 'bg-white/3 border border-white/8 backdrop-blur-md'
-                    : 'bg-white border border-slate-200 shadow-sm'
+                    ? 'bg-white/[0.04] border border-blue-500/20 backdrop-blur-xl shadow-2xl shadow-blue-950/20'
+                    : 'bg-white border border-slate-200/80 shadow-lg shadow-slate-100'
                 }`}
               >
+                {/* Header Banner */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-3 rounded-2xl ${isDarkMode ? 'bg-blue-500/20 border border-blue-500/30' : 'bg-blue-50 border border-blue-200'}`}>
-                      <Milestone size={22} className={isDarkMode ? "text-blue-400" : "text-blue-600"} />
+                  <div className="flex items-center gap-3.5">
+                    <div className="p-3 rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 border border-blue-500/30 text-blue-400 shadow-inner">
+                      <Milestone size={22} />
                     </div>
                     <div>
                       <h3 className={`text-lg font-black tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
                         Deployment Timeline Roadmap
                       </h3>
-                      <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>
+                      <p className={`text-xs mt-0.5 ${isDarkMode ? 'text-blue-400/90' : 'text-blue-600'}`}>
                         Milestone sequence for target {displayJobTitle} shortlist certification
                       </p>
                     </div>
                   </div>
 
-                  <div className={`px-4 py-2 rounded-xl text-right border shrink-0 ${isDarkMode ? 'bg-white/5 border-white/10' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className={`px-4 py-2 rounded-2xl text-right border shrink-0 backdrop-blur-md ${
+                    isDarkMode ? 'bg-white/[0.04] border-white/10' : 'bg-slate-50 border-slate-200'
+                  }`}>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Milestone Progress</span>
-                    <div className="text-sm font-black text-blue-500">{roadmapProgressPercent}% Deployed</div>
+                    <div className="text-sm font-black text-blue-400">{roadmapProgressPercent}% Deployed</div>
                   </div>
                 </div>
 
-                {/* Vertical Alternating Timeline Container */}
-                <div className="relative py-4">
-
-                  {/* Central Vertical Connecting Line */}
-                  <div className={`absolute top-0 bottom-0 left-4 md:left-1/2 w-0.5 -translate-x-1/2 ${
-                    isDarkMode ? 'bg-gradient-to-b from-blue-500/40 via-violet-500/40 to-emerald-500/40' : 'bg-gradient-to-b from-blue-400 via-violet-400 to-emerald-400'
+                {/* Vertical Timeline Container */}
+                <div className="relative pl-6 sm:pl-8 space-y-4">
+                  {/* Clean Vertical Line */}
+                  <div className={`absolute top-4 bottom-4 left-[15px] sm:left-[19px] w-[2px] rounded-full ${
+                    isDarkMode 
+                      ? 'bg-gradient-to-b from-blue-500 via-violet-500/40 to-slate-800' 
+                      : 'bg-gradient-to-b from-blue-500 via-indigo-300 to-slate-200'
                   }`} />
 
-                  <div className="space-y-8 relative">
-                    {timelineMilestones.map((item, idx) => {
-                      const isEven = idx % 2 === 0;
-                      const isChecked = !!checkedSteps[idx];
+                  {timelineMilestones.map((item, idx) => {
+                    const isChecked = !!checkedSteps[idx];
 
-                      return (
-                        <div key={idx} className="relative flex flex-col md:flex-row items-center">
+                    return (
+                      <div key={idx} className="relative flex items-start gap-4 sm:gap-6 group">
+                        {/* Circular Check/Indicator Button */}
+                        <button
+                          type="button"
+                          onClick={() => toggleStep(idx)}
+                          className={`relative -ml-[25px] sm:-ml-[29px] w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center transition shrink-0 z-20 cursor-pointer shadow-md ${
+                            isChecked
+                              ? 'bg-blue-600 border-2 border-white text-white shadow-blue-500/50 scale-105'
+                              : isDarkMode
+                                ? 'bg-slate-900 border-2 border-blue-500/80 text-blue-400 hover:scale-110 hover:border-blue-400'
+                                : 'bg-white border-2 border-blue-500 text-blue-600 hover:scale-110'
+                          }`}
+                          title="Toggle Milestone Completion"
+                        >
+                          {isChecked ? <Check size={13} className="stroke-[3]" /> : <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />}
+                        </button>
 
-                          {/* Node Dot on Vertical Line */}
-                          <button
-                            type="button"
+                        {/* Milestone Card */}
+                        <div className="flex-1 min-w-0">
+                          <motion.div
+                            whileHover={{ y: -2 }}
                             onClick={() => toggleStep(idx)}
-                            className={`absolute left-4 md:left-1/2 -translate-x-1/2 w-7 h-7 rounded-full flex items-center justify-center transition z-20 cursor-pointer border-2 ${
+                            className={`rounded-2xl p-5 sm:p-6 relative overflow-hidden transition-all duration-300 border cursor-pointer ${
                               isChecked
-                                ? 'bg-blue-500 border-white text-white shadow-lg shadow-blue-500/50'
-                                : isDarkMode
-                                ? 'bg-slate-900 border-blue-400 text-blue-400 hover:scale-110'
-                                : 'bg-white border-blue-500 text-blue-600 hover:scale-110 shadow-sm'
+                                ? isDarkMode 
+                                  ? 'bg-gradient-to-r from-blue-950/30 via-slate-900/40 to-slate-900/20 border-blue-500/40 shadow-lg shadow-blue-950/20' 
+                                  : 'bg-blue-50/70 border-blue-200/80 shadow-sm'
+                                : isDarkMode 
+                                  ? 'bg-white/[0.02] border-white/[0.08] hover:border-blue-500/30 hover:bg-white/[0.04]' 
+                                  : 'bg-white border-slate-200 shadow-sm hover:border-blue-300'
                             }`}
-                            title="Toggle Milestone Completion"
                           >
-                            {isChecked ? <Check size={12} className="stroke-[3]" /> : <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />}
-                          </button>
+                            {/* Background Watermark Year */}
+                            <div className={`text-4xl sm:text-5xl font-black tracking-tighter absolute right-4 top-2 select-none pointer-events-none opacity-40 ${
+                              isDarkMode ? 'text-blue-200/10' : 'text-blue-600/10'
+                            }`}>
+                              {item.year}
+                            </div>
 
-                          {/* Timeline Card Container */}
-                          <div className={`w-full pl-12 md:pl-0 md:w-1/2 ${isEven ? 'md:pr-10 md:text-right' : 'md:col-start-2 md:ml-auto md:pl-10'}`}>
-                            <motion.div
-                              whileHover={{ y: -3, scale: 1.01 }}
-                              onClick={() => toggleStep(idx)}
-                              className={`rounded-2xl p-6 relative overflow-hidden transition border cursor-pointer ${
-                                isChecked
-                                  ? isDarkMode ? 'bg-white/6 border-blue-400/40 shadow-lg shadow-blue-500/10' : 'bg-blue-50/80 border-blue-300 shadow-sm'
-                                  : isDarkMode ? 'bg-white/3 border-white/8 hover:border-blue-500/30' : 'bg-white border-slate-200 shadow-sm hover:border-blue-300'
-                              }`}
-                            >
-                              {/* Watermark Year / Phase Number (Matching Reference Screenshot Design) */}
-                              <div className={`text-4xl sm:text-5xl font-black tracking-tighter absolute top-2 right-4 select-none pointer-events-none ${
-                                isDarkMode ? 'text-blue-400/10' : 'text-blue-600/10'
+                            {/* Phase & Status Tags */}
+                            <div className="flex items-center gap-2 mb-2 flex-wrap">
+                              <span className={`text-[10px] font-black uppercase tracking-wider px-3 py-1 rounded-full border ${
+                                isDarkMode
+                                  ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                                  : 'bg-blue-50 border-blue-200 text-blue-700'
                               }`}>
-                                {item.year}
-                              </div>
-
-                              {/* Small Blue Header Badge */}
-                              <div className={`flex items-center gap-2 mb-1.5 flex-wrap ${isEven ? 'md:justify-end' : 'justify-start'}`}>
-                                <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${
-                                  isDarkMode
-                                    ? 'bg-blue-500/15 border-blue-500/30 text-blue-400'
-                                    : 'bg-blue-50 border-blue-200 text-blue-700'
+                                {item.phase}
+                              </span>
+                              {item.status && (
+                                <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                                  item.status === 'Completed'
+                                    ? isDarkMode ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                    : item.status === 'In Progress'
+                                    ? isDarkMode ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' : 'bg-amber-50 text-amber-700 border border-amber-200'
+                                    : isDarkMode ? 'bg-slate-800 text-slate-400 border border-slate-700' : 'bg-slate-100 text-slate-600 border border-slate-200'
                                 }`}>
-                                  {item.phase}
+                                  ● {item.status}
                                 </span>
-                                {item.status && (
-                                  <span className={`text-[9px] font-bold ${
-                                    item.status === 'Completed' ? 'text-emerald-500' : item.status === 'In Progress' ? 'text-amber-500' : 'text-slate-400'
-                                  }`}>
-                                    ● {item.status}
-                                  </span>
-                                )}
-                              </div>
-
-                              {/* Title */}
-                              <h4 className={`text-base font-extrabold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
-                                {item.title}
-                              </h4>
-
-                              {/* Body Description */}
-                              <p className={`text-xs mt-2 leading-relaxed ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
-                                {item.description}
-                              </p>
-
-                              {/* Bottom Impact Tag */}
-                              {item.impact && (
-                                <div className={`mt-3 pt-2 flex items-center gap-1.5 ${isEven ? 'md:justify-end' : 'justify-start'}`}>
-                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                                    isDarkMode ? 'bg-violet-500/15 border border-violet-500/30 text-violet-300' : 'bg-violet-50 border border-violet-200 text-violet-700'
-                                  }`}>
-                                    🚀 {item.impact}
-                                  </span>
-                                </div>
                               )}
-                            </motion.div>
-                          </div>
+                            </div>
+
+                            {/* Title */}
+                            <h4 className={`text-base font-extrabold tracking-tight ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>
+                              {item.title}
+                            </h4>
+
+                            {/* Description */}
+                            <p className={`text-xs mt-1.5 leading-relaxed max-w-2xl ${isDarkMode ? 'text-slate-300' : 'text-slate-600'}`}>
+                              {item.description}
+                            </p>
+
+                            {/* Impact Badge */}
+                            {item.impact && (
+                              <div className="mt-3.5 pt-2 flex items-center gap-1.5">
+                                <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2.5 py-1 rounded-lg ${
+                                  isDarkMode ? 'bg-purple-500/15 border border-purple-500/30 text-purple-300' : 'bg-purple-50 border border-purple-200 text-purple-700'
+                                }`}>
+                                  🚀 {item.impact}
+                                </span>
+                              </div>
+                            )}
+                          </motion.div>
                         </div>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </motion.div>
 

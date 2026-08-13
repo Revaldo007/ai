@@ -7,6 +7,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+class ValidationError(ValueError):
+    """Custom exception raised when uploaded resume content is invalid or too short."""
+    pass
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # COMMON TECH SKILLS VOCABULARY
 # ─────────────────────────────────────────────────────────────────────────────
@@ -758,6 +763,54 @@ NON_TECH_DOMAINS = {
 }
 
 
+def extract_text_from_pdf(pdf_file):
+    """Extract text from an uploaded PDF file object or path."""
+    try:
+        if isinstance(pdf_file, str):
+            text = pdf_file
+        else:
+            import pypdf
+            reader = pypdf.PdfReader(pdf_file)
+            text = ""
+            for page in reader.pages:
+                text += page.extract_text() or ""
+        
+        # Validate minimum character length for viable resume content
+        if not text or len(text.strip()) < 50:
+            raise ValidationError("The uploaded PDF does not contain enough text to be evaluated as a resume.")
+        return text
+    except ValidationError:
+        raise
+    except Exception:
+        raise ValidationError("Could not parse text from the uploaded PDF file.")
+
+
+def evaluate_resume(pdf_file, required_skills):
+    # Step 1: Extract text from the uploaded PDF (with validation guard clause)
+    resume_text = extract_text_from_pdf(pdf_file)
+    
+    # Step 2: Your standard matching logic (executed only if text exists & meets criteria)
+    matched_skills = []
+    missing_skills = []
+    
+    for skill in required_skills:
+        if skill.lower() in resume_text.lower():
+            matched_skills.append(skill)
+        else:
+            missing_skills.append(skill)
+            
+    # Calculate score safely
+    total_skills = len(required_skills)
+    score = (len(matched_skills) / total_skills) * 100 if total_skills > 0 else 0.0
+    
+    return {
+        "match_score": round(score, 2),
+        "matched_skills": matched_skills,
+        "missing_skills": missing_skills,
+        "status": "Success"
+    }
+
+
 def extract_skills_from_text(text):
     """Extract and normalize all tech skills found in resume text."""
     text_lower = text.lower()
@@ -960,6 +1013,10 @@ def generate_deep_resume_analysis(resume_text, job_title="Software Developer"):
     Handles 50+ tech roles and 18 non-tech domain groups.
     Returns comprehensive scoring, diagnostics, rewrite suggestions, and feedback.
     """
+    # Guard clause against short or empty resume text
+    if not resume_text or len(resume_text.strip()) < 50:
+        raise ValidationError("The uploaded PDF does not contain enough text to be evaluated as a resume.")
+
     text_lower = resume_text.lower()
     raw_lines = [l.strip() for l in resume_text.split('\n') if l.strip()]
 
@@ -1134,7 +1191,6 @@ def generate_deep_resume_analysis(resume_text, job_title="Software Developer"):
             if len(clean) < 60 and not clean.endswith('.'):
                 detected_projects.append(clean)
     detected_projects = list(dict.fromkeys(detected_projects))
-    proj_note = f"Verified: {', '.join(detected_projects[:2]) if detected_projects else 'Technical Projects'} — stack tags applied."
 
     return {
         "overall_match": overall_match,
@@ -1168,9 +1224,13 @@ def generate_deep_resume_analysis(resume_text, job_title="Software Developer"):
 
 def analyze_resume_with_gemini(resume_text, job_title="Software Developer"):
     """
-    Sends resume to Gemini API for analysis. Falls back to deep structural
-    analysis on quota errors (429) or API unavailability.
+    Sends resume to Gemini API for analysis with strict content validity rules.
+    Falls back to deep structural analysis on quota errors (429) or API unavailability.
     """
+    # Guard clause against short or empty resume text
+    if not resume_text or len(resume_text.strip()) < 50:
+        raise ValidationError("The uploaded PDF does not contain enough text to be evaluated as a resume.")
+
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         print("--- GEMINI API KEY MISSING — USING DEEP RESUME ANALYZER ---")
@@ -1183,6 +1243,9 @@ You are an expert AI Resume Evaluator and ATS Technical Recruiter with deep know
 100+ job roles across tech, healthcare, legal, finance, business, and creative fields.
 
 Analyze the following resume specifically for: "{job_title}".
+
+CRITICAL VALIDATION & INVALID RESUME RULE:
+- If the provided resume text is extremely short (e.g., just "hi", random characters, or lacks professional experience, education, or skill sections typical of a legitimate resume), you MUST set "overall_match": 0, "ats_shortlist": 0, and return feedback explaining that the document does not resemble a legitimate resume.
 
 CRITICAL DOMAIN MISMATCH RULE:
 - If the target job is a non-tech role (Doctor, Lawyer, Accountant, Pilot, Civil Engineer, etc.)

@@ -1,11 +1,38 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import HomePage from "./pages/HomePage";
 import ResultsView from "./views/ResultsView";
+import LoginPage from "./pages/LoginPage";
 
 export default function App() {
   const [jobTitle, setJobTitle] = useState("");
   const [resumeFile, setResumeFile] = useState(null);
   const [isAnalyzed, setIsAnalyzed] = useState(false);
+
+  // Auth State
+  const [token, setToken] = useState(localStorage.getItem('token') || null);
+  const [username, setUsername] = useState(localStorage.getItem('username') || null);
+  const isLoggedIn = !!token;
+
+  useEffect(() => {
+    if (token) {
+      localStorage.setItem('token', token);
+      localStorage.setItem('username', username);
+    } else {
+      localStorage.removeItem('token');
+      localStorage.removeItem('username');
+    }
+  }, [token, username]);
+
+  const handleLogin = (newToken, newUsername) => {
+    setToken(newToken);
+    setUsername(newUsername);
+  };
+
+  const handleLogout = () => {
+    setToken(null);
+    setUsername(null);
+    handleReset();
+  };
 
   // API State Variables
   const [analysisData, setAnalysisData] = useState(null);
@@ -25,9 +52,15 @@ export default function App() {
     formData.append("resume", resumeFile);
     formData.append("job_title", jobTitle || "Software Engineer");
 
+    const headers = {};
+    if (token) {
+      headers["Authorization"] = `Token ${token}`;
+    }
+
     try {
       const response = await fetch("http://127.0.0.1:8000/api/analyze/", {
         method: "POST",
+        headers,
         body: formData,
       });
 
@@ -70,7 +103,9 @@ export default function App() {
 
   return (
     <div>
-      {!isAnalyzed ? (
+      {!isLoggedIn ? (
+        <LoginPage onLogin={handleLogin} />
+      ) : !isAnalyzed ? (
         <HomePage
           jobTitle={jobTitle}
           setJobTitle={setJobTitle}
@@ -79,11 +114,14 @@ export default function App() {
           onAnalyze={handleAnalyze}
           isLoading={isLoading}
           error={error}
+          token={token}
+          username={username}
+          onLogout={handleLogout}
         />
       ) : (
         <ResultsView
           jobTitle={jobTitle}
-          fileName={resumeFile?.name || "Uploaded_Resume.pdf"}
+          fileName={resumeFile?.name || "Uploaded_Resume"}
           analysisData={analysisData}
           onReset={handleReset}
         />
