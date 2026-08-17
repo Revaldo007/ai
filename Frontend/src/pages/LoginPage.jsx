@@ -195,7 +195,30 @@ export default function LoginPage({ onLogin }) {
                 </motion.button>
               </form>
 
-              <div className="mt-8 text-center">
+              {/* Demo Credentials Helper */}
+              {isLogin && (
+                <div className="mt-5 p-3 rounded-xl bg-white/[0.03] border border-white/10 text-center">
+                  <p className="text-xs text-slate-400 mb-2">⚡ Quick Fill Demo Accounts:</p>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ username: 'reo', password: 'reo123' })}
+                      className="px-2.5 py-1 text-xs rounded-lg bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 border border-violet-500/30 transition-all font-mono"
+                    >
+                      reo (reo123)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormData({ username: 'reception@hospital.com', password: 'password123' })}
+                      className="px-2.5 py-1 text-xs rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/30 transition-all font-mono"
+                    >
+                      reception@hospital.com
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 text-center">
                 <p className="text-sm text-slate-400">
                   {isLogin ? "Don't have an account?" : "Already have an account?"}{' '}
                   <button

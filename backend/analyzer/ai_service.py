@@ -1231,12 +1231,13 @@ def analyze_resume_with_gemini(resume_text, job_title="Software Developer"):
     if not resume_text or len(resume_text.strip()) < 50:
         raise ValidationError("The uploaded PDF does not contain enough text to be evaluated as a resume.")
 
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
     if not api_key:
         print("--- GEMINI API KEY MISSING — USING DEEP RESUME ANALYZER ---")
         return generate_deep_resume_analysis(resume_text, job_title)
 
     client = genai.Client(api_key=api_key)
+
 
     prompt = f"""
 You are an expert AI Resume Evaluator and ATS Technical Recruiter with deep knowledge of
