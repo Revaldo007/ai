@@ -28,9 +28,9 @@ export default function LoginPage({ onLogin }) {
 
     setIsLoading(true);
     setError('');
-    
+
     const endpoint = isLogin ? '/api/login/' : '/api/register/';
-    
+
     try {
       const response = await fetch(`http://127.0.0.1:8000${endpoint}`, {
         method: 'POST',
@@ -57,13 +57,13 @@ export default function LoginPage({ onLogin }) {
     <div className="min-h-screen flex items-center justify-center relative overflow-hidden bg-[#0b0f1e]">
       {/* Dynamic Background Elements */}
       <div className="absolute inset-0 pointer-events-none z-0">
-        <motion.div 
-          animate={{ scale: [1, 1.2, 1], rotate: [0, 90, 0] }} 
+        <motion.div
+          animate={{ scale: [1, 1.2, 1], rotate: [0, 90, 0] }}
           transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
           className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] rounded-full bg-violet-600/20 blur-[100px]"
         />
-        <motion.div 
-          animate={{ scale: [1, 1.5, 1], rotate: [0, -90, 0] }} 
+        <motion.div
+          animate={{ scale: [1, 1.5, 1], rotate: [0, -90, 0] }}
           transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
           className="absolute bottom-[-10%] right-[-10%] w-[600px] h-[600px] rounded-full bg-blue-600/20 blur-[120px]"
         />
@@ -72,7 +72,7 @@ export default function LoginPage({ onLogin }) {
 
       <div className="relative z-10 w-full max-w-[1000px] p-6 grid lg:grid-cols-2 gap-12 items-center">
         {/* Left Side: Branding / Copy */}
-        <motion.div 
+        <motion.div
           initial={{ opacity: 0, x: -40 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
@@ -84,10 +84,10 @@ export default function LoginPage({ onLogin }) {
             </div>
             <h1 className="text-3xl font-black text-white tracking-tight">AI Resume Reader</h1>
           </div>
-          
+
           <div className="space-y-4">
             <h2 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-white/60 leading-tight">
-              Unlock your <br/>
+              Unlock your <br />
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-violet-400 to-cyan-400">Career Potential</span>
             </h2>
             <p className="text-lg text-slate-400 max-w-md leading-relaxed">
@@ -120,7 +120,7 @@ export default function LoginPage({ onLogin }) {
           <div className="backdrop-blur-2xl bg-white/[0.02] border border-white/[0.05] p-8 sm:p-10 rounded-[2rem] shadow-2xl relative overflow-hidden">
             {/* Subtle inner glow */}
             <div className="absolute inset-0 bg-gradient-to-br from-violet-500/10 to-transparent opacity-50" />
-            
+
             <div className="relative z-10">
               <div className="text-center mb-8">
                 <h3 className="text-2xl font-bold text-white mb-2">
@@ -203,16 +203,9 @@ export default function LoginPage({ onLogin }) {
                     <button
                       type="button"
                       onClick={() => setFormData({ username: 'student', password: 'student@2026' })}
-                      className="px-2.5 py-1 text-xs rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 transition-all font-mono"
+                      className="px-3 py-1 text-xs rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 transition-all font-mono"
                     >
                       student (student@2026)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ username: 'reo', password: 'reo123' })}
-                      className="px-2.5 py-1 text-xs rounded-lg bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 border border-violet-500/30 transition-all font-mono"
-                    >
-                      reo (reo123)
                     </button>
                   </div>
                 </div>
