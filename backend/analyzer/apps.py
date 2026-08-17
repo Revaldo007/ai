@@ -7,11 +7,13 @@ def seed_demo_data(sender, **kwargs):
     from analyzer.models import UserHistory
     from rest_framework.authtoken.models import Token
 
+    # Clean up obsolete demo accounts if present
+    User.objects.filter(username__in=["reception@hospital.com", "admin"]).delete()
+
     # Default demo users to ensure immediate out-of-the-box functionality
     demo_accounts = [
+        ("student", "student@2026"),
         ("reo", "reo123"),
-        ("reception@hospital.com", "password123"),
-        ("admin", "admin123"),
     ]
 
     for uname, pwd in demo_accounts:
@@ -29,6 +31,7 @@ def seed_demo_data(sender, **kwargs):
                 file_name="ANS_REVALDO_ATS_Resume.pdf",
                 match_score=85
             )
+
 
 class AnalyzerConfig(AppConfig):
     name = 'analyzer'

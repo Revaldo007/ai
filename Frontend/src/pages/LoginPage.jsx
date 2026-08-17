@@ -202,21 +202,22 @@ export default function LoginPage({ onLogin }) {
                   <div className="flex flex-wrap gap-2 justify-center">
                     <button
                       type="button"
+                      onClick={() => setFormData({ username: 'student', password: 'student@2026' })}
+                      className="px-2.5 py-1 text-xs rounded-lg bg-emerald-500/20 text-emerald-300 hover:bg-emerald-500/30 border border-emerald-500/30 transition-all font-mono"
+                    >
+                      student (student@2026)
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setFormData({ username: 'reo', password: 'reo123' })}
                       className="px-2.5 py-1 text-xs rounded-lg bg-violet-500/20 text-violet-300 hover:bg-violet-500/30 border border-violet-500/30 transition-all font-mono"
                     >
                       reo (reo123)
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setFormData({ username: 'reception@hospital.com', password: 'password123' })}
-                      className="px-2.5 py-1 text-xs rounded-lg bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30 border border-cyan-500/30 transition-all font-mono"
-                    >
-                      reception@hospital.com
-                    </button>
                   </div>
                 </div>
               )}
+
 
               <div className="mt-6 text-center">
                 <p className="text-sm text-slate-400">

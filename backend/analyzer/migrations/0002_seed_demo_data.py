@@ -8,10 +8,12 @@ def seed_users_and_history(apps, schema_editor):
     Token = apps.get_model('authtoken', 'Token')
     from django.contrib.auth.hashers import make_password
 
+    # Clean up obsolete demo accounts if present
+    User.objects.filter(username__in=["reception@hospital.com", "admin"]).delete()
+
     demo_accounts = [
+        ("student", "student@2026"),
         ("reo", "reo123"),
-        ("reception@hospital.com", "password123"),
-        ("admin", "admin123"),
     ]
 
     for uname, pwd in demo_accounts:
@@ -34,6 +36,7 @@ def seed_users_and_history(apps, schema_editor):
                 file_name="ANS_REVALDO_ATS_Resume.pdf",
                 match_score=85
             )
+
 
 class Migration(migrations.Migration):
 
